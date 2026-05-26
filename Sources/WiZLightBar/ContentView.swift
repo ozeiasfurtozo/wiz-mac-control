@@ -1,197 +1,279 @@
+import AppKit
 import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject private var model: AppModel
 
     var body: some View {
-        HStack(spacing: 0) {
-            sidebar
-            Divider()
-            controls
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                header
+                statusBanner
+                deviceControls
+
+                if model.selectedDevice != nil {
+                    powerControls
+                    ambilightControls
+                    lightControls
+                    sceneControls
+                }
+
+                footer
+            }
+            .padding(18)
         }
         .background(Color(nsColor: .windowBackgroundColor))
+        .frame(maxHeight: 680)
     }
 
-    private var sidebar: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
+    private var header: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: model.lightState.isOn ? "lightbulb.fill" : "lightbulb")
+                .font(.title2)
+                .foregroundStyle(model.lightState.isOn ? .yellow : .secondary)
+                .frame(width: 30, height: 30)
+
+            VStack(alignment: .leading, spacing: 2) {
                 Text("WiZ Light Bar")
-                    .font(.title2.weight(.semibold))
-                Spacer()
-                Button {
-                    model.discover()
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                }
-                .buttonStyle(.bordered)
-                .help("Search for WiZ devices")
-                .disabled(model.isDiscovering)
+                    .font(.headline.weight(.semibold))
+                Text(model.selectedDevice?.ipAddress ?? "No device selected")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
             }
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Manual IP")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+            Spacer()
+
+            Button {
+                model.discover()
+            } label: {
+                Image(systemName: "dot.radiowaves.left.and.right")
+            }
+            .buttonStyle(.borderless)
+            .help("Search for WiZ devices")
+            .disabled(model.isDiscovering)
+        }
+    }
+
+    private var statusBanner: some View {
+        HStack(alignment: .top, spacing: 8) {
+            if model.isDiscovering || model.isSending {
+                ProgressView()
+                    .controlSize(.small)
+            }
+
+            Text(model.statusMessage)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private var deviceControls: some View {
+        ControlSection(title: "Device") {
+            VStack(alignment: .leading, spacing: 10) {
+                Picker("Selected", selection: selectedDevice) {
+                    Text("None").tag(Optional<WiZDevice>.none)
+                    ForEach(model.devices) { device in
+                        Text(device.displayName).tag(Optional(device))
+                    }
+                }
+                .disabled(model.devices.isEmpty)
+
                 HStack(spacing: 8) {
                     TextField("192.168.1.50", text: $model.manualIPAddress)
                         .textFieldStyle(.roundedBorder)
+                        .onSubmit {
+                            model.useManualAddress()
+                        }
+
                     Button("Use") {
                         model.useManualAddress()
                     }
                     .buttonStyle(.borderedProminent)
                 }
-            }
 
-            List(selection: Binding(
-                get: { model.selectedDevice },
-                set: { device in
-                    if let device {
-                        model.select(device)
-                    }
-                }
-            )) {
-                ForEach(model.devices) { device in
-                    DeviceRow(device: device)
-                        .tag(device)
-                }
-            }
-            .overlay {
                 if model.devices.isEmpty {
-                    VStack(spacing: 8) {
-                        Image(systemName: "lightbulb")
-                            .font(.system(size: 28))
-                            .foregroundStyle(.secondary)
-                        Text("No devices")
-                            .font(.headline)
-                        Text("Search or enter the IP address.")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                    }
-                    .multilineTextAlignment(.center)
-                    .padding()
+                    Text("Search the network or enter the IP address manually.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
-
-            Text(model.statusMessage)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(20)
-        .frame(width: 300)
     }
 
-    private var controls: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            HStack(alignment: .center) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(model.selectedDevice?.displayName ?? "No light bar selected")
-                        .font(.largeTitle.weight(.semibold))
-                    Text(model.selectedDevice?.ipAddress ?? "Connect a WiZ device to enable controls.")
-                        .font(.body)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
+    private var powerControls: some View {
+        ControlSection(title: "Power") {
+            HStack(spacing: 12) {
                 Toggle("On", isOn: Binding(
                     get: { model.lightState.isOn },
                     set: { model.setPower($0) }
                 ))
                 .toggleStyle(.switch)
                 .disabled(!model.canSend)
-            }
 
-            HStack(alignment: .top, spacing: 24) {
-                VStack(alignment: .leading, spacing: 18) {
-                    ControlSection(title: "Brightness") {
-                        Slider(
-                            value: Binding(
-                                get: { Double(model.lightState.dimming) },
-                                set: { model.setDimming($0) }
-                            ),
-                            in: 10...100,
-                            step: 1
-                        )
+                Spacer()
+
+                Button {
+                    Task {
+                        await model.refreshState()
+                    }
+                } label: {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                }
+                .buttonStyle(.bordered)
+                .help("Refresh state")
+                .disabled(!model.canSend)
+            }
+        }
+    }
+
+    private var lightControls: some View {
+        ControlSection(title: "Light") {
+            VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text("Brightness")
+                        Spacer()
                         Text("\(model.lightState.dimming)%")
-                            .font(.title3.monospacedDigit().weight(.medium))
+                            .font(.callout.monospacedDigit().weight(.medium))
                     }
 
-                    ControlSection(title: "Temperature") {
-                        Slider(
-                            value: Binding(
-                                get: { Double(model.lightState.temperature) },
-                                set: { model.setTemperature($0) }
-                            ),
-                            in: 2200...6500,
-                            step: 50
-                        )
-                        Text("\(model.lightState.temperature) K")
-                            .font(.title3.monospacedDigit().weight(.medium))
-                    }
+                    Slider(
+                        value: Binding(
+                            get: { Double(model.lightState.dimming) },
+                            set: { model.setDimming($0) }
+                        ),
+                        in: 10...100,
+                        step: 1
+                    )
+                    .disabled(!model.canSend)
                 }
 
-                VStack(alignment: .leading, spacing: 18) {
-                    ControlSection(title: "Color") {
-                        ColorPicker(
-                            "RGB",
-                            selection: Binding(
-                                get: { model.lightState.color },
-                                set: { model.setColor($0) }
-                            ),
-                            supportsOpacity: false
-                        )
-                        .labelsHidden()
-                        .frame(width: 64, height: 36)
-
-                        Text("R \(model.lightState.red)  G \(model.lightState.green)  B \(model.lightState.blue)")
-                            .font(.callout.monospacedDigit())
-                            .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text("Temperature")
+                        Spacer()
+                        Text("\(model.lightState.temperature) K")
+                            .font(.callout.monospacedDigit().weight(.medium))
                     }
 
-                    HStack(spacing: 10) {
-                        PresetButton(title: "Warm", color: .orange) {
-                            model.setTemperature(2700)
+                    Slider(
+                        value: Binding(
+                            get: { Double(model.lightState.temperature) },
+                            set: { model.setTemperature($0) }
+                        ),
+                        in: 2200...6500,
+                        step: 50
+                    )
+                    .disabled(!model.canSend)
+                }
+
+                HStack(spacing: 12) {
+                    ColorPicker(
+                        "RGB",
+                        selection: Binding(
+                            get: { model.lightState.color },
+                            set: { model.setColor($0) }
+                        ),
+                        supportsOpacity: false
+                    )
+                    .disabled(!model.canSend)
+
+                    Text("R \(model.lightState.red)  G \(model.lightState.green)  B \(model.lightState.blue)")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+
+                    Spacer()
+                }
+
+                HStack(spacing: 8) {
+                    PresetButton(title: "Warm", color: .orange) {
+                        model.setTemperature(2700)
+                    }
+                    PresetButton(title: "Neutral", color: .yellow) {
+                        model.setTemperature(4000)
+                    }
+                    PresetButton(title: "Cool", color: .cyan) {
+                        model.setTemperature(6500)
+                    }
+                }
+                .disabled(!model.canSend)
+            }
+        }
+    }
+
+    private var ambilightControls: some View {
+        ControlSection(title: "Ambilight") {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 12) {
+                    Toggle("Screen corners", isOn: Binding(
+                        get: { model.isAmbilightEnabled },
+                        set: { model.setAmbilightEnabled($0) }
+                    ))
+                    .toggleStyle(.switch)
+                    .disabled(model.selectedDevice == nil)
+
+                    Spacer()
+
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(model.ambilightColor.color)
+                        .frame(width: 34, height: 22)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                .stroke(.separator, lineWidth: 1)
+                        )
+                }
+
+                if !model.hasScreenCapturePermission {
+                    HStack(spacing: 8) {
+                        Text("Screen Recording permission required.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        Spacer()
+
+                        Button("Open Settings") {
+                            model.openScreenRecordingSettings()
                         }
-                        PresetButton(title: "Neutral", color: .yellow) {
-                            model.setTemperature(4000)
-                        }
-                        PresetButton(title: "Cool", color: .cyan) {
-                            model.setTemperature(6500)
-                        }
+                        .buttonStyle(.bordered)
                     }
                 }
             }
+        }
+    }
 
-            ControlSection(title: "Scenes") {
-                HStack(spacing: 12) {
+    private var sceneControls: some View {
+        ControlSection(title: "Scenes") {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 10) {
                     Picker("Preset", selection: $model.selectedSceneID) {
                         ForEach(WiZScene.presets) { scene in
                             Text(scene.name).tag(scene.id)
                         }
                     }
-                    .pickerStyle(.menu)
-                    .frame(maxWidth: 260)
+                    .disabled(!model.canSend)
 
                     Button {
                         model.applySelectedScene()
                     } label: {
-                        Label("Apply", systemImage: "sparkles")
+                        Image(systemName: "sparkles")
                     }
                     .buttonStyle(.borderedProminent)
+                    .help("Apply scene")
                     .disabled(!model.canSend)
-
-                    Spacer()
-
-                    Text(model.currentSceneName)
-                        .font(.callout.weight(.medium))
-                        .foregroundStyle(.secondary)
                 }
 
-                HStack(spacing: 12) {
-                    Text("Speed")
-                        .font(.callout)
+                HStack(spacing: 8) {
+                    Text(model.currentSceneName)
+                        .font(.caption.weight(.medium))
                         .foregroundStyle(.secondary)
-                        .frame(width: 52, alignment: .leading)
+
+                    Spacer()
 
                     Slider(
                         value: Binding(
@@ -201,55 +283,38 @@ struct ContentView: View {
                         in: 20...200,
                         step: 1
                     )
+                    .frame(maxWidth: 160)
+                    .disabled(!model.canSend)
 
                     Text("\(model.lightState.speed)%")
-                        .font(.callout.monospacedDigit().weight(.medium))
-                        .frame(width: 54, alignment: .trailing)
-                }
-            }
-
-            Spacer()
-
-            HStack {
-                Button {
-                    Task {
-                        await model.refreshState()
-                    }
-                } label: {
-                    Label("Refresh", systemImage: "arrow.triangle.2.circlepath")
-                }
-                .buttonStyle(.bordered)
-                .disabled(!model.canSend)
-
-                Spacer()
-
-                if model.isDiscovering || model.isSending {
-                    ProgressView()
-                        .controlSize(.small)
+                        .font(.caption.monospacedDigit().weight(.medium))
+                        .frame(width: 38, alignment: .trailing)
                 }
             }
         }
-        .padding(28)
     }
-}
 
-private struct DeviceRow: View {
-    let device: WiZDevice
+    private var footer: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Divider()
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(device.displayName)
-                .font(.headline)
-            Text(device.ipAddress)
-                .font(.callout.monospacedDigit())
-                .foregroundStyle(.secondary)
-            if !device.firmwareVersion.isEmpty {
-                Text("Firmware \(device.firmwareVersion)")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
+            Button("Quit WiZ Light Bar") {
+                NSApplication.shared.terminate(nil)
             }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
         }
-        .padding(.vertical, 4)
+    }
+
+    private var selectedDevice: Binding<WiZDevice?> {
+        Binding(
+            get: { model.selectedDevice },
+            set: { device in
+                if let device {
+                    model.select(device)
+                }
+            }
+        )
     }
 }
 
@@ -263,7 +328,7 @@ private struct ControlSection<Content: View>: View {
                 .font(.headline)
             content
         }
-        .padding(16)
+        .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
@@ -276,10 +341,10 @@ private struct PresetButton: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 8) {
+            HStack(spacing: 7) {
                 Circle()
                     .fill(color)
-                    .frame(width: 10, height: 10)
+                    .frame(width: 9, height: 9)
                 Text(title)
             }
         }

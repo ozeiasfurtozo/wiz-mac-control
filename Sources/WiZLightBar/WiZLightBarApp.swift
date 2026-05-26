@@ -1,18 +1,26 @@
+import AppKit
 import SwiftUI
 
 @main
 struct WiZLightBarApp: App {
     @StateObject private var model = AppModel()
 
+    init() {
+        NSApplication.shared.setActivationPolicy(.accessory)
+    }
+
     var body: some Scene {
-        WindowGroup {
+        MenuBarExtra {
             ContentView()
                 .environmentObject(model)
-                .frame(minWidth: 760, minHeight: 560)
+                .frame(width: 400)
+        } label: {
+            Label {
+                Text("WiZ Light Bar")
+            } icon: {
+                Image(systemName: model.lightState.isOn ? "lightbulb.fill" : "lightbulb")
+            }
         }
-        .windowStyle(.titleBar)
-        .commands {
-            CommandGroup(replacing: .newItem) {}
-        }
+        .menuBarExtraStyle(.window)
     }
 }

@@ -1,11 +1,13 @@
 # WiZ Light Bar
 
-A native SwiftUI macOS app for controlling a WiZ light bar over the local network.
+A native SwiftUI macOS menu bar app for controlling a WiZ light bar over the local network.
 
 ## Features
 
 - Local UDP discovery for WiZ devices.
 - Manual IP fallback.
+- Remembers the last connected device.
+- Ambilight mode that samples the screen corners and reflects the average color on the light bar.
 - Power toggle.
 - Brightness control.
 - White temperature control.
@@ -25,6 +27,8 @@ A native SwiftUI macOS app for controlling a WiZ light bar over the local networ
 swift run WiZLightBar
 ```
 
+The app appears as a light bulb in the macOS menu bar. Use the menu bar panel to discover devices, enter an IP address manually, control the light, or quit the app.
+
 ## Packaging
 
 ```bash
@@ -37,7 +41,7 @@ The app is created at:
 .build/app/WiZ Light Bar.app
 ```
 
-On first launch, macOS may ask for local network permission.
+The packaged app runs as a menu bar utility, so it does not show a Dock icon. On first launch, macOS may ask for local network permission. Ambilight mode also requires Screen Recording permission in macOS System Settings.
 
 ## Notes
 

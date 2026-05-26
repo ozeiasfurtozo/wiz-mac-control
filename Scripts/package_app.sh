@@ -37,6 +37,8 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
     <string>1</string>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
+    <key>LSUIElement</key>
+    <true/>
     <key>NSLocalNetworkUsageDescription</key>
     <string>The app uses the local network to discover and control WiZ devices.</string>
     <key>NSPrincipalClass</key>

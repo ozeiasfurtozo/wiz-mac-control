@@ -47,6 +47,65 @@ struct WiZLightState: Equatable {
     }
 }
 
+struct RGBLightColor: Equatable {
+    var red: Int
+    var green: Int
+    var blue: Int
+
+    var color: Color {
+        Color(
+            red: Double(red) / 255.0,
+            green: Double(green) / 255.0,
+            blue: Double(blue) / 255.0
+        )
+    }
+
+    func blended(with target: RGBLightColor, amount: Double) -> RGBLightColor {
+        let normalizedAmount = amount.clamped(to: 0.0...1.0)
+        return RGBLightColor(
+            red: blend(red, target.red, amount: normalizedAmount),
+            green: blend(green, target.green, amount: normalizedAmount),
+            blue: blend(blue, target.blue, amount: normalizedAmount)
+        )
+    }
+
+    func enhanced(saturation: Double, brightness: Double) -> RGBLightColor {
+        let color = NSColor(
+            deviceRed: Double(red) / 255.0,
+            green: Double(green) / 255.0,
+            blue: Double(blue) / 255.0,
+            alpha: 1.0
+        )
+
+        var hue: CGFloat = 0
+        var currentSaturation: CGFloat = 0
+        var currentBrightness: CGFloat = 0
+        var alpha: CGFloat = 0
+        color.getHue(&hue, saturation: &currentSaturation, brightness: &currentBrightness, alpha: &alpha)
+
+        let adjusted = NSColor(
+            calibratedHue: hue,
+            saturation: (currentSaturation * saturation).clamped(to: 0.0...1.0),
+            brightness: (currentBrightness * brightness).clamped(to: 0.04...1.0),
+            alpha: alpha
+        )
+
+        guard let rgb = adjusted.usingColorSpace(.deviceRGB) else {
+            return self
+        }
+
+        return RGBLightColor(
+            red: Int((rgb.redComponent * 255.0).rounded()).clamped(to: 0...255),
+            green: Int((rgb.greenComponent * 255.0).rounded()).clamped(to: 0...255),
+            blue: Int((rgb.blueComponent * 255.0).rounded()).clamped(to: 0...255)
+        )
+    }
+
+    private func blend(_ current: Int, _ target: Int, amount: Double) -> Int {
+        Int((Double(current) + (Double(target) - Double(current)) * amount).rounded()).clamped(to: 0...255)
+    }
+}
+
 struct WiZScene: Identifiable, Hashable {
     let id: Int
     let name: String
