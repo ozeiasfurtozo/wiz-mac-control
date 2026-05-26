@@ -1,0 +1,102 @@
+import Foundation
+import SwiftUI
+
+struct WiZDevice: Identifiable, Hashable {
+    var id: String { mac.isEmpty ? ipAddress : mac }
+
+    let ipAddress: String
+    let mac: String
+    let moduleName: String
+    let firmwareVersion: String
+
+    var displayName: String {
+        if !moduleName.isEmpty {
+            return moduleName
+        }
+        if !mac.isEmpty {
+            return "WiZ \(mac.suffix(4))"
+        }
+        return "WiZ Light"
+    }
+}
+
+struct WiZLightState: Equatable {
+    var isOn: Bool = false
+    var dimming: Int = 80
+    var temperature: Int = 3000
+    var red: Int = 255
+    var green: Int = 214
+    var blue: Int = 170
+    var sceneId: Int?
+    var speed: Int = 100
+
+    var color: Color {
+        get {
+            Color(
+                red: Double(red) / 255.0,
+                green: Double(green) / 255.0,
+                blue: Double(blue) / 255.0
+            )
+        }
+        set {
+            let nativeColor = NSColor(newValue).usingColorSpace(.deviceRGB) ?? .white
+            red = Int((nativeColor.redComponent * 255.0).rounded()).clamped(to: 0...255)
+            green = Int((nativeColor.greenComponent * 255.0).rounded()).clamped(to: 0...255)
+            blue = Int((nativeColor.blueComponent * 255.0).rounded()).clamped(to: 0...255)
+        }
+    }
+}
+
+struct WiZScene: Identifiable, Hashable {
+    let id: Int
+    let name: String
+
+    static let presets: [WiZScene] = [
+        WiZScene(id: 1, name: "Ocean"),
+        WiZScene(id: 2, name: "Romance"),
+        WiZScene(id: 3, name: "Sunset"),
+        WiZScene(id: 4, name: "Party"),
+        WiZScene(id: 5, name: "Fireplace"),
+        WiZScene(id: 6, name: "Cozy"),
+        WiZScene(id: 7, name: "Forest"),
+        WiZScene(id: 8, name: "Pastel Colors"),
+        WiZScene(id: 9, name: "Wake up"),
+        WiZScene(id: 10, name: "Bedtime"),
+        WiZScene(id: 11, name: "Warm white"),
+        WiZScene(id: 12, name: "Daylight"),
+        WiZScene(id: 13, name: "Cool white"),
+        WiZScene(id: 14, name: "Night light"),
+        WiZScene(id: 15, name: "Focus"),
+        WiZScene(id: 16, name: "Relax"),
+        WiZScene(id: 17, name: "True colors"),
+        WiZScene(id: 18, name: "TV Time"),
+        WiZScene(id: 19, name: "Plant growth"),
+        WiZScene(id: 20, name: "Spring"),
+        WiZScene(id: 21, name: "Summer"),
+        WiZScene(id: 22, name: "Fall"),
+        WiZScene(id: 23, name: "Deep dive"),
+        WiZScene(id: 24, name: "Jungle"),
+        WiZScene(id: 25, name: "Mojito"),
+        WiZScene(id: 26, name: "Club"),
+        WiZScene(id: 27, name: "Christmas"),
+        WiZScene(id: 28, name: "Halloween"),
+        WiZScene(id: 29, name: "Candlelight"),
+        WiZScene(id: 30, name: "Golden white"),
+        WiZScene(id: 31, name: "Pulse"),
+        WiZScene(id: 32, name: "Steampunk"),
+        WiZScene(id: 33, name: "Diwali")
+    ]
+
+    static func named(_ id: Int?) -> WiZScene? {
+        guard let id else {
+            return nil
+        }
+        return presets.first { $0.id == id }
+    }
+}
+
+extension Comparable {
+    func clamped(to limits: ClosedRange<Self>) -> Self {
+        min(max(self, limits.lowerBound), limits.upperBound)
+    }
+}
