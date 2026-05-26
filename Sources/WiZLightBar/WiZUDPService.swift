@@ -74,17 +74,20 @@ final class WiZUDPService {
         )
     }
 
-    func setColor(ipAddress: String, red: Int, green: Int, blue: Int, dimming: Int) async throws {
-        try await sendSetPilot(
-            ipAddress: ipAddress,
-            params: [
-                "state": true,
-                "r": red.clamped(to: 0...255),
-                "g": green.clamped(to: 0...255),
-                "b": blue.clamped(to: 0...255),
-                "dimming": dimming.clamped(to: 10...100)
-            ]
-        )
+    func setColor(ipAddress: String, red: Int, green: Int, blue: Int, dimming: Int, zone: Int? = nil) async throws {
+        var params: [String: Any] = [
+            "state": true,
+            "r": red.clamped(to: 0...255),
+            "g": green.clamped(to: 0...255),
+            "b": blue.clamped(to: 0...255),
+            "dimming": dimming.clamped(to: 10...100)
+        ]
+
+        if let zone {
+            params["devices"] = zone.clamped(to: 1...2)
+        }
+
+        try await sendSetPilot(ipAddress: ipAddress, params: params)
     }
 
     func setScene(ipAddress: String, sceneId: Int, speed: Int, dimming: Int) async throws {

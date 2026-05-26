@@ -13,9 +13,8 @@ struct ContentView: View {
 
                 if model.selectedDevice != nil {
                     powerControls
-                    ambilightControls
-                    lightControls
-                    sceneControls
+                    modeSelector
+                    activeModeControls
                 }
 
                 footer
@@ -132,8 +131,32 @@ struct ContentView: View {
         }
     }
 
+    private var modeSelector: some View {
+        Picker("Mode", selection: Binding(
+            get: { model.selectedControlMode },
+            set: { model.setControlMode($0) }
+        )) {
+            ForEach(LightControlMode.allCases) { mode in
+                Text(mode.title).tag(mode)
+            }
+        }
+        .pickerStyle(.segmented)
+    }
+
+    @ViewBuilder
+    private var activeModeControls: some View {
+        switch model.selectedControlMode {
+        case .ambilight:
+            ambilightControls
+        case .color:
+            lightControls
+        case .scenes:
+            sceneControls
+        }
+    }
+
     private var lightControls: some View {
-        ControlSection(title: "Light") {
+        ControlSection(title: "Color") {
             VStack(alignment: .leading, spacing: 14) {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
@@ -211,7 +234,7 @@ struct ContentView: View {
         ControlSection(title: "Ambilight") {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 12) {
-                    Toggle("Screen corners", isOn: Binding(
+                    Toggle("Two zones", isOn: Binding(
                         get: { model.isAmbilightEnabled },
                         set: { model.setAmbilightEnabled($0) }
                     ))
@@ -219,14 +242,90 @@ struct ContentView: View {
                     .disabled(model.selectedDevice == nil)
 
                     Spacer()
+                }
 
-                    RoundedRectangle(cornerRadius: 5, style: .continuous)
-                        .fill(model.ambilightColor.color)
-                        .frame(width: 34, height: 22)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 5, style: .continuous)
-                                .stroke(.separator, lineWidth: 1)
-                        )
+                HStack(spacing: 12) {
+                    ZonePreview(title: "Zone A", color: model.ambilightZoneAColor.color)
+                    ZonePreview(title: "Zone B", color: model.ambilightZoneBColor.color)
+                }
+
+                HStack(spacing: 8) {
+                    Picker("Monitor", selection: Binding(
+                        get: { model.selectedAmbilightDisplayID },
+                        set: { model.setAmbilightDisplay($0) }
+                    )) {
+                        ForEach(model.ambilightDisplays) { display in
+                            Text(display.displayName).tag(display.id)
+                        }
+                    }
+                    .disabled(model.ambilightDisplays.isEmpty)
+
+                    Button {
+                        model.refreshAmbilightDisplays()
+                    } label: {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                    }
+                    .buttonStyle(.bordered)
+                    .help("Refresh monitors")
+                }
+
+                Toggle("Swap A/B", isOn: Binding(
+                    get: { model.isAmbilightZoneMappingSwapped },
+                    set: { model.setAmbilightZoneMappingSwapped($0) }
+                ))
+                .toggleStyle(.checkbox)
+                .disabled(model.selectedDevice == nil)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("Side offset")
+                        Spacer()
+                        Text("\(Int(model.ambilightSideOffset)) px")
+                            .font(.caption.monospacedDigit().weight(.medium))
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Slider(
+                        value: Binding(
+                            get: { model.ambilightSideOffset },
+                            set: { model.setAmbilightSideOffset($0) }
+                        ),
+                        in: 0...360,
+                        step: 1
+                    )
+                    .disabled(model.selectedDevice == nil)
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("Top/bottom offset")
+                        Spacer()
+                        Text("\(Int(model.ambilightVerticalOffset)) px")
+                            .font(.caption.monospacedDigit().weight(.medium))
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Slider(
+                        value: Binding(
+                            get: { model.ambilightVerticalOffset },
+                            set: { model.setAmbilightVerticalOffset($0) }
+                        ),
+                        in: 0...360,
+                        step: 1
+                    )
+                    .disabled(model.selectedDevice == nil)
+                }
+
+                Text("Zone A follows the left side of the screen; Zone B follows the right side.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if model.isAmbilightZoneMappingSwapped {
+                    Text("Swapped: Zone A follows right, Zone B follows left.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 if !model.hasScreenCapturePermission {
@@ -315,6 +414,27 @@ struct ContentView: View {
                 }
             }
         )
+    }
+}
+
+private struct ZonePreview: View {
+    let title: String
+    let color: Color
+
+    var body: some View {
+        HStack(spacing: 7) {
+            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                .fill(color)
+                .frame(width: 34, height: 22)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .stroke(.separator, lineWidth: 1)
+                )
+            Text(title)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

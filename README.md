@@ -7,7 +7,7 @@ A native SwiftUI macOS menu bar app for controlling a WiZ light bar over the loc
 - Local UDP discovery for WiZ devices.
 - Manual IP fallback.
 - Remembers the last connected device.
-- Ambilight mode that samples the screen corners and reflects the average color on the light bar.
+- Two-zone Ambilight mode for WiZ Gradient Bars, mapping the left screen corners to Zone A and the right screen corners to Zone B.
 - Power toggle.
 - Brightness control.
 - White temperature control.

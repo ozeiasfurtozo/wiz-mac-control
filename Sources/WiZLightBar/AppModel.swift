@@ -22,9 +22,16 @@ final class AppModel: ObservableObject {
     @Published var selectedSceneID = WiZScene.presets[0].id
     @Published var isDiscovering = false
     @Published var isSending = false
+    @Published var selectedControlMode: LightControlMode = .color
     @Published var isAmbilightEnabled = false
     @Published var hasScreenCapturePermission = false
-    @Published var ambilightColor = RGBLightColor(red: 255, green: 214, blue: 170)
+    @Published var isAmbilightZoneMappingSwapped = false
+    @Published var ambilightSideOffset: Double = 0
+    @Published var ambilightVerticalOffset: Double = 0
+    @Published var ambilightDisplays: [AmbilightDisplay] = []
+    @Published var selectedAmbilightDisplayID: UInt32 = 0
+    @Published var ambilightZoneAColor = RGBLightColor(red: 255, green: 214, blue: 170)
+    @Published var ambilightZoneBColor = RGBLightColor(red: 255, green: 214, blue: 170)
     @Published var statusMessage = "Find the light bar on your network or enter its IP address manually."
 
     private let service = WiZUDPService()
@@ -37,11 +44,24 @@ final class AppModel: ObservableObject {
         static let lastDeviceMAC = "lastDeviceMAC"
         static let lastDeviceModuleName = "lastDeviceModuleName"
         static let lastDeviceFirmwareVersion = "lastDeviceFirmwareVersion"
+        static let ambilightZoneMappingSwapped = "ambilightZoneMappingSwapped"
+        static let ambilightSideOffset = "ambilightSideOffset"
+        static let ambilightVerticalOffset = "ambilightVerticalOffset"
+        static let ambilightDisplayID = "ambilightDisplayID"
+        static let selectedControlMode = "selectedControlMode"
     }
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        if let rawMode = defaults.string(forKey: DefaultsKey.selectedControlMode),
+           let mode = LightControlMode(rawValue: rawMode) {
+            selectedControlMode = mode
+        }
         hasScreenCapturePermission = screenSampler.hasScreenCaptureAccess
+        isAmbilightZoneMappingSwapped = defaults.bool(forKey: DefaultsKey.ambilightZoneMappingSwapped)
+        ambilightSideOffset = defaults.double(forKey: DefaultsKey.ambilightSideOffset).clamped(to: 0...360)
+        ambilightVerticalOffset = defaults.double(forKey: DefaultsKey.ambilightVerticalOffset).clamped(to: 0...360)
+        refreshAmbilightDisplays()
         restoreLastDevice()
     }
 
@@ -172,6 +192,7 @@ final class AppModel: ObservableObject {
 
     func applySelectedScene() {
         stopAmbilightIfNeeded()
+        selectedControlMode = .scenes
 
         lightState.isOn = true
         lightState.sceneId = selectedSceneID
@@ -190,10 +211,59 @@ final class AppModel: ObservableObject {
 
     func setAmbilightEnabled(_ isEnabled: Bool) {
         if isEnabled {
+            setControlMode(.ambilight)
             startAmbilight()
         } else {
             stopAmbilight(statusMessage: "Ambilight mode stopped.")
         }
+    }
+
+    func setControlMode(_ mode: LightControlMode) {
+        selectedControlMode = mode
+        defaults.set(mode.rawValue, forKey: DefaultsKey.selectedControlMode)
+
+        if mode != .ambilight {
+            stopAmbilightIfNeeded()
+        }
+    }
+
+    func setAmbilightZoneMappingSwapped(_ isSwapped: Bool) {
+        isAmbilightZoneMappingSwapped = isSwapped
+        defaults.set(isSwapped, forKey: DefaultsKey.ambilightZoneMappingSwapped)
+        if isAmbilightEnabled {
+            statusMessage = isSwapped ? "Ambilight zones swapped." : "Ambilight zones restored."
+        }
+    }
+
+    func setAmbilightSideOffset(_ offset: Double) {
+        let value = offset.rounded().clamped(to: 0...360)
+        ambilightSideOffset = value
+        defaults.set(value, forKey: DefaultsKey.ambilightSideOffset)
+    }
+
+    func setAmbilightVerticalOffset(_ offset: Double) {
+        let value = offset.rounded().clamped(to: 0...360)
+        ambilightVerticalOffset = value
+        defaults.set(value, forKey: DefaultsKey.ambilightVerticalOffset)
+    }
+
+    func setAmbilightDisplay(_ displayID: UInt32) {
+        selectedAmbilightDisplayID = displayID
+        defaults.set(Int(displayID), forKey: DefaultsKey.ambilightDisplayID)
+    }
+
+    func refreshAmbilightDisplays() {
+        ambilightDisplays = screenSampler.availableDisplays()
+
+        let savedDisplayID = UInt32(defaults.integer(forKey: DefaultsKey.ambilightDisplayID))
+        if savedDisplayID != 0, ambilightDisplays.contains(where: { $0.id == savedDisplayID }) {
+            selectedAmbilightDisplayID = savedDisplayID
+            return
+        }
+
+        let fallbackDisplay = ambilightDisplays.first(where: \.isMain) ?? ambilightDisplays.first
+        selectedAmbilightDisplayID = fallbackDisplay?.id ?? CGMainDisplayID()
+        defaults.set(Int(selectedAmbilightDisplayID), forKey: DefaultsKey.ambilightDisplayID)
     }
 
     func openScreenRecordingSettings() {
@@ -228,6 +298,7 @@ final class AppModel: ObservableObject {
             return
         }
 
+        refreshAmbilightDisplays()
         hasScreenCapturePermission = screenSampler.hasScreenCaptureAccess
         if !hasScreenCapturePermission {
             hasScreenCapturePermission = screenSampler.requestScreenCaptureAccess()
@@ -246,7 +317,7 @@ final class AppModel: ObservableObject {
         statusMessage = "Ambilight mode active."
 
         ambilightTask = Task { [weak self] in
-            var previousColor: RGBLightColor?
+            var previousColors: AmbilightZoneColors?
             var failureCount = 0
 
             while !Task.isCancelled {
@@ -255,7 +326,7 @@ final class AppModel: ObservableObject {
                 }
 
                 do {
-                    previousColor = try await self.sendAmbilightFrame(previousColor: previousColor)
+                    previousColors = try await self.sendAmbilightFrame(previousColors: previousColors)
                     failureCount = 0
                 } catch {
                     failureCount += 1
@@ -281,35 +352,54 @@ final class AppModel: ObservableObject {
         statusMessage = message
     }
 
-    private func sendAmbilightFrame(previousColor: RGBLightColor?) async throws -> RGBLightColor {
+    private func sendAmbilightFrame(previousColors: AmbilightZoneColors?) async throws -> AmbilightZoneColors {
         guard let ipAddress = selectedDevice?.ipAddress else {
             throw AmbilightError.noSelectedDevice
         }
 
         let sampler = screenSampler
-        let sampledColor = try await Task.detached(priority: .utility) {
-            try sampler.averageCornerColor()
+        let configuration = AmbilightSamplingConfiguration(
+            sideOffset: ambilightSideOffset,
+            verticalOffset: ambilightVerticalOffset,
+            displayID: selectedAmbilightDisplayID
+        )
+        let sampledColors = try await Task.detached(priority: .utility) {
+            try sampler.averageTwoZoneColors(configuration: configuration)
         }.value
         .enhanced(saturation: 1.35, brightness: 1.08)
 
-        let outputColor = previousColor?.blended(with: sampledColor, amount: 0.38) ?? sampledColor
+        let screenColors = previousColors?.blended(with: sampledColors, amount: 0.38) ?? sampledColors
+        let outputColors = isAmbilightZoneMappingSwapped
+            ? AmbilightZoneColors(zoneA: screenColors.zoneB, zoneB: screenColors.zoneA)
+            : screenColors
 
         try await service.setColor(
             ipAddress: ipAddress,
-            red: outputColor.red,
-            green: outputColor.green,
-            blue: outputColor.blue,
-            dimming: lightState.dimming
+            red: outputColors.zoneA.red,
+            green: outputColors.zoneA.green,
+            blue: outputColors.zoneA.blue,
+            dimming: lightState.dimming,
+            zone: 1
+        )
+
+        try await service.setColor(
+            ipAddress: ipAddress,
+            red: outputColors.zoneB.red,
+            green: outputColors.zoneB.green,
+            blue: outputColors.zoneB.blue,
+            dimming: lightState.dimming,
+            zone: 2
         )
 
         lightState.isOn = true
         lightState.sceneId = nil
-        lightState.red = outputColor.red
-        lightState.green = outputColor.green
-        lightState.blue = outputColor.blue
-        ambilightColor = outputColor
+        lightState.red = (outputColors.zoneA.red + outputColors.zoneB.red) / 2
+        lightState.green = (outputColors.zoneA.green + outputColors.zoneB.green) / 2
+        lightState.blue = (outputColors.zoneA.blue + outputColors.zoneB.blue) / 2
+        ambilightZoneAColor = outputColors.zoneA
+        ambilightZoneBColor = outputColors.zoneB
 
-        return outputColor
+        return screenColors
     }
 
     private func handleAmbilightError(_ error: Error, shouldStop: Bool) {

@@ -106,6 +106,60 @@ struct RGBLightColor: Equatable {
     }
 }
 
+struct AmbilightZoneColors: Equatable {
+    var zoneA: RGBLightColor
+    var zoneB: RGBLightColor
+
+    func blended(with target: AmbilightZoneColors, amount: Double) -> AmbilightZoneColors {
+        AmbilightZoneColors(
+            zoneA: zoneA.blended(with: target.zoneA, amount: amount),
+            zoneB: zoneB.blended(with: target.zoneB, amount: amount)
+        )
+    }
+
+    func enhanced(saturation: Double, brightness: Double) -> AmbilightZoneColors {
+        AmbilightZoneColors(
+            zoneA: zoneA.enhanced(saturation: saturation, brightness: brightness),
+            zoneB: zoneB.enhanced(saturation: saturation, brightness: brightness)
+        )
+    }
+}
+
+struct AmbilightSamplingConfiguration: Equatable {
+    var sideOffset: Double = 0
+    var verticalOffset: Double = 0
+    var displayID: UInt32 = 0
+}
+
+struct AmbilightDisplay: Identifiable, Hashable {
+    let id: UInt32
+    let name: String
+    let isMain: Bool
+
+    var displayName: String {
+        isMain ? "\(name) (Main)" : name
+    }
+}
+
+enum LightControlMode: String, CaseIterable, Identifiable {
+    case ambilight
+    case color
+    case scenes
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .ambilight:
+            return "Ambilight"
+        case .color:
+            return "Color"
+        case .scenes:
+            return "Scenes"
+        }
+    }
+}
+
 struct WiZScene: Identifiable, Hashable {
     let id: Int
     let name: String

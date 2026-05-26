@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 import Foundation
 
@@ -29,29 +30,76 @@ struct ScreenCornerSampler {
         CGRequestScreenCaptureAccess()
     }
 
+    func availableDisplays() -> [AmbilightDisplay] {
+        let screens = NSScreen.screens
+        let displays = screens.enumerated().compactMap { index, screen -> AmbilightDisplay? in
+            guard let displayNumber = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else {
+                return nil
+            }
+
+            return AmbilightDisplay(
+                id: displayNumber.uint32Value,
+                name: screen.localizedName.isEmpty ? "Display \(index + 1)" : screen.localizedName,
+                isMain: screen === NSScreen.main
+            )
+        }
+
+        if !displays.isEmpty {
+            return displays
+        }
+
+        return [
+            AmbilightDisplay(
+                id: CGMainDisplayID(),
+                name: "Main Display",
+                isMain: true
+            )
+        ]
+    }
+
     func averageCornerColor() throws -> RGBLightColor {
+        let colors = try averageTwoZoneColors()
+        return average(colors: [colors.zoneA, colors.zoneB])
+    }
+
+    func averageTwoZoneColors(configuration: AmbilightSamplingConfiguration = AmbilightSamplingConfiguration()) throws -> AmbilightZoneColors {
         guard hasScreenCaptureAccess else {
             throw ScreenCornerSamplerError.screenCapturePermissionDenied
         }
 
-        let displayID = CGMainDisplayID()
+        let displayID = configuration.displayID == 0 ? CGMainDisplayID() : CGDirectDisplayID(configuration.displayID)
         let bounds = CGDisplayBounds(displayID)
         let sampleSide = min(max(min(bounds.width, bounds.height) * 0.16, 96), 220)
+        let sideOffset = configuration.sideOffset.clamped(to: 0...max(bounds.width / 2 - sampleSide, 0))
+        let verticalOffset = configuration.verticalOffset.clamped(to: 0...max(bounds.height / 2 - sampleSide, 0))
 
-        let sampleRects = [
-            CGRect(x: bounds.minX, y: bounds.minY, width: sampleSide, height: sampleSide),
-            CGRect(x: bounds.maxX - sampleSide, y: bounds.minY, width: sampleSide, height: sampleSide),
-            CGRect(x: bounds.minX, y: bounds.maxY - sampleSide, width: sampleSide, height: sampleSide),
-            CGRect(x: bounds.maxX - sampleSide, y: bounds.maxY - sampleSide, width: sampleSide, height: sampleSide)
+        let leftRects = [
+            CGRect(x: bounds.minX + sideOffset, y: bounds.minY + verticalOffset, width: sampleSide, height: sampleSide),
+            CGRect(x: bounds.minX + sideOffset, y: bounds.maxY - sampleSide - verticalOffset, width: sampleSide, height: sampleSide)
+        ]
+        let rightRects = [
+            CGRect(x: bounds.maxX - sampleSide - sideOffset, y: bounds.minY + verticalOffset, width: sampleSide, height: sampleSide),
+            CGRect(x: bounds.maxX - sampleSide - sideOffset, y: bounds.maxY - sampleSide - verticalOffset, width: sampleSide, height: sampleSide)
         ]
 
-        let colors = try sampleRects.map { rect in
+        return AmbilightZoneColors(
+            zoneA: try averageColor(in: leftRects, displayID: displayID),
+            zoneB: try averageColor(in: rightRects, displayID: displayID)
+        )
+    }
+
+    private func averageColor(in rects: [CGRect], displayID: CGDirectDisplayID) throws -> RGBLightColor {
+        let colors = try rects.map { rect in
             guard let image = CGDisplayCreateImage(displayID, rect: rect) else {
                 throw ScreenCornerSamplerError.captureFailed
             }
             return try averageColor(in: image)
         }
 
+        return average(colors: colors)
+    }
+
+    private func average(colors: [RGBLightColor]) -> RGBLightColor {
         let red = colors.reduce(0) { $0 + $1.red } / colors.count
         let green = colors.reduce(0) { $0 + $1.green } / colors.count
         let blue = colors.reduce(0) { $0 + $1.blue } / colors.count
